@@ -124,34 +124,19 @@
     native/pre do
         HANDLE hSerial;
     end
-    
-    native/plain _dcbSerialParams;
-    native/pre do
-        DCB dcbSerialParams = {0};
-    end
 
-    native/plain _buffer;
-    native/pre do
-        char buffer[1];
-    end
-
-    native/plain _bytesRead;
-    native/pre do
-        DWORD bytesRead;
-    end
-
-    native/plain _status;
-    native/pre do
-        COMSTAT status;
-    end
-
-    native/plain _errors;
-    native/pre do
-        DWORD errors;
-    end
-
-    par/and do
-        //OPEN
+    par/and do //CHECK KEYBOARD KEYS TO EMIT EVENTS 
+        var integer key;
+        every key in KEY_PRESS do
+            if key == KEY_LEFT then
+                emit left;
+            else/if key == KEY_RIGHT then
+                emit right;      
+            else/if key == KEY_SPACE then
+                emit shoot;
+            end
+        end
+    with //READ SERIAL TO EMIT EVENTS
         {
             hSerial = CreateFile("COM3",
                     GENERIC_READ | GENERIC_WRITE,
@@ -162,7 +147,7 @@
                     NULL);
             ceu_dbg_assert(hSerial != INVALID_HANDLE_VALUE);
 
-            
+            DCB dcbSerialParams = {0};
             ceu_dbg_assert(GetCommState(hSerial,&dcbSerialParams));
         
             dcbSerialParams.BaudRate    = CBR_9600;
@@ -176,51 +161,47 @@
             //Sleep(2000);
         } 
 
-        // READ
-        loop do
+        loop do //READ SERIAL TO EMIT EVENTS
             loop do
                 {
-                    ClearCommError(hSerial, &errors, &status);
+                    DWORD errors;
+                    COMSTAT status;
 
-                    if (status.cbInQue == 1) {
-                        printf("break) status.cbInQue: %d\n", status.cbInQue);
+                    ClearCommError(hSerial, &errors, &status);
+                    if (status.cbInQue == 1)
                         break;
-                    }
                 }
                 await 10ms;
             end
             
             {
+                DWORD bytesRead;
+                char buffer[1];
+
                 ceu_dbg_assert(ReadFile(hSerial, buffer, 1, &bytesRead, NULL));
                 ceu_dbg_assert(bytesRead == 1);
-
                 @pressedButton = buffer[0];
             }
 
             if (pressedButton == 1) then
                 emit shoot;
             else/if (pressedButton == 2) then
-                _printf("2\n");
                 emit left;
             else/if (pressedButton == 3) then
-                _printf("3\n");
                 emit right;
-            else
-                _printf("other button\n");
             end
-
         end
         
         // {
         //     // CLOSE
         //     CloseHandle(hSerial);
         // }
-    with
+    with //CALLBACK OF "SHOOT" EVENT
         loop do
             await shoot;
             _printf("shoot\n");
         end
-    with
+    with //CALLBACK OF "RIGHT" EVENT
         loop do
             await right;
             if control==-1 then
@@ -229,7 +210,7 @@
                 control = 1;        
             end
         end
-    with
+    with //CALLBACK OF "LEFT" EVENT
         loop do
             await left;
             if control==1 then
@@ -238,21 +219,7 @@
                 control = -1;
             end
         end
-    with
-        //VERIFICA TECLAS DO TECLADO
-        var integer key;
-        every key in KEY_PRESS do
-            if key == KEY_LEFT then
-                emit left;
-            else/if key == KEY_RIGHT then
-                emit right;      
-            else/if key == KEY_SPACE then
-                emit shoot;
-            end
-        end
-    with
-        //DESENHA A NAVE
-
+    with //DRAW SHIP
         every 50ms do
             if control == -1 then
                 emit WINDOW_CLEAR();
@@ -263,7 +230,7 @@
                     x = x - 2;
                 end
                 emit GRAPHICS_DRAW_BMP(x, NAVE_Y, "res/ship.bmp");
-                
+
             else/if control == 1 then
                 emit WINDOW_CLEAR();
                 emit GRAPHICS_SET_BMP_FRAME(3, 4);
