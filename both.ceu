@@ -98,6 +98,10 @@
         ##include <windows.h>
     end
 
+    event void shoot;
+    event void left;
+    event void right;    
+
     emit WINDOW_SET_TITLE("Game");
     emit WINDOW_SET_SIZE(100*10, 100*10, 100, 100);
 
@@ -114,6 +118,8 @@
     var int y = 0;
     var int control = 0;
 
+    var int pressedButton = 0;
+
     native/plain _hSerial;
     native/pre do
         HANDLE hSerial;
@@ -126,7 +132,7 @@
 
     native/plain _buffer;
     native/pre do
-        char buffer[2];
+        char buffer[1];
     end
 
     native/plain _bytesRead;
@@ -187,10 +193,21 @@
             {
                 ceu_dbg_assert(ReadFile(hSerial, buffer, 1, &bytesRead, NULL));
                 ceu_dbg_assert(bytesRead == 1);
-        
-                buffer[1] = '\0';
-                printf(">>> %c\n", buffer);
+
+                @pressedButton = buffer[0];
             }
+
+            if (pressedButton == 1) then
+                emit shoot;
+            else/if (pressedButton == 2) then
+                _printf("2\n");
+                emit left;
+            else/if (pressedButton == 3) then
+                _printf("3\n");
+                emit right;
+            else
+                _printf("other button\n");
+            end
 
         end
         
@@ -199,27 +216,44 @@
         //     CloseHandle(hSerial);
         // }
     with
-        var integer key;
-        every key in KEY_PRESS do
-            if key == KEY_LEFT then
-                if control==1 then
-                    control = 0;
-                else/if control == 0 or control == -1 then
-                    control = -1;
-                end
-            else/if key == KEY_RIGHT then
-                if control==-1 then
-                    control = 0;
-                else/if control==0 or control == 1 then
-                    control = 1;        
-                end         
-            else/if key == KEY_UP then
-                _printf("BANG");
+        loop do
+            await shoot;
+            _printf("shoot\n");
+        end
+    with
+        loop do
+            await right;
+            if control==-1 then
+                control = 0;
+            else/if control==0 or control == 1 then
+                control = 1;        
             end
         end
     with
+        loop do
+            await left;
+            if control==1 then
+                control = 0;
+            else/if control == 0 or control == -1 then
+                control = -1;
+            end
+        end
+    with
+        //VERIFICA TECLAS DO TECLADO
+        var integer key;
+        every key in KEY_PRESS do
+            if key == KEY_LEFT then
+                emit left;
+            else/if key == KEY_RIGHT then
+                emit right;      
+            else/if key == KEY_SPACE then
+                emit shoot;
+            end
+        end
+    with
+        //DESENHA A NAVE
+
         every 50ms do
-            //_printf("> %d (control: %d)\n", x, control);
             if control == -1 then
                 emit WINDOW_CLEAR();
                 emit GRAPHICS_SET_BMP_FRAME(2, 4);
@@ -229,6 +263,7 @@
                     x = x - 2;
                 end
                 emit GRAPHICS_DRAW_BMP(x, NAVE_Y, "res/ship.bmp");
+                
             else/if control == 1 then
                 emit WINDOW_CLEAR();
                 emit GRAPHICS_SET_BMP_FRAME(3, 4);
@@ -237,6 +272,7 @@
                 if x < NAVE_LIMITE then
                     x = x + 2;
                 end
+
                 emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");               
             else/if control == 0 then
                 emit WINDOW_CLEAR();
@@ -245,11 +281,7 @@
                 emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");
             end
         end
-
     end
 
-
-    
-    
     
 #endif
