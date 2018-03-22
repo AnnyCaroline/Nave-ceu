@@ -1,0 +1,255 @@
+#ifdef CEUMAKER_ARDUINO
+
+    #include "arduino/arduino.ceu"
+    
+    native/pre do
+        //##define CEU_ARDUINO_SERIAL_SPEED 9600
+    end
+    
+    input byte SERIAL;
+
+    output bool PIN_13; //led
+    input  bool PIN_02; //shoot button
+    input  bool PIN_12; //left button
+    input  bool PIN_04; //right button
+
+    event  void shoot;
+    event  void left;
+    event  void right;
+
+    native _shootSound;
+    native _moveSound;
+
+    native/pre do
+        #define buzzerPort 11 
+        
+        void shootSound(){
+            tone(buzzerPort, 2093);
+            delay(40);
+            tone(buzzerPort, 1865);
+            delay(83);
+            noTone(buzzerPort);
+        }
+
+        void moveSound(){
+            tone(buzzerPort, 880);
+            delay(40);
+            noTone(buzzerPort);
+        }
+    end    
+
+    //_Serial.write(a);
+    //a = await SERIAL;
+    
+    par/and do
+        //blink on-board led
+        loop do
+            emit PIN_13(HIGH);
+            await 1s;
+            emit PIN_13(LOW);
+            await 1s;
+        end
+    with
+        //play buzzer
+        loop do
+            await shoot;
+            _shootSound();
+            await 100ms;
+        end
+    with
+        //play buzzer left
+        loop do
+            await left;
+            _moveSound();
+            await 100ms;
+        end
+    with
+        //play buzzer right
+        loop do
+            await right;
+            _moveSound();
+            await 100ms;
+        end     
+    with
+        //shoot button
+        loop do
+            var bool v = await PIN_02 until v==HIGH;
+            emit shoot;
+            _Serial.write(1);
+        end
+    with
+        //left button
+        loop do
+            var bool v = await PIN_12 until v==HIGH;
+            emit left;
+            _Serial.write(2);
+        end
+    with
+        //right button
+        loop do
+            var bool v = await PIN_04 until v==HIGH;
+            emit right;
+            _Serial.write(3);
+        end
+    end
+#elif defined CEUMAKER_PICO
+    
+    native/pre do
+        ##include <windows.h>
+    end
+
+    emit WINDOW_SET_TITLE("Game");
+    emit WINDOW_SET_SIZE(100*10, 100*10, 100, 100);
+
+    #define NAVE_Y -10
+    #define NAVE_LIMITE 42
+
+    emit WINDOW_CLEAR();
+    emit WINDOW_SET_GRID(no);
+    emit GRAPHICS_SET_BMP_FRAME(1, 4);
+    emit GRAPHICS_SET_BMP_SIZE(_,10);
+    emit GRAPHICS_DRAW_BMP(0,NAVE_Y, "res/ship.bmp");
+
+    var int x = 0;
+    var int y = 0;
+    var int control = 0;
+
+    native/plain _hSerial;
+    native/pre do
+        HANDLE hSerial;
+    end
+    
+    native/plain _dcbSerialParams;
+    native/pre do
+        DCB dcbSerialParams = {0};
+    end
+
+    native/plain _buffer;
+    native/pre do
+        char buffer[2];
+    end
+
+    native/plain _bytesRead;
+    native/pre do
+        DWORD bytesRead;
+    end
+
+    native/plain _status;
+    native/pre do
+        COMSTAT status;
+    end
+
+    native/plain _errors;
+    native/pre do
+        DWORD errors;
+    end
+
+    par/and do
+        //OPEN
+        {
+            hSerial = CreateFile("COM3",
+                    GENERIC_READ | GENERIC_WRITE,
+                    0,
+                    NULL,
+                    OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL,
+                    NULL);
+            ceu_dbg_assert(hSerial != INVALID_HANDLE_VALUE);
+
+            
+            ceu_dbg_assert(GetCommState(hSerial,&dcbSerialParams));
+        
+            dcbSerialParams.BaudRate    = CBR_9600;
+            dcbSerialParams.ByteSize    = 8;
+            dcbSerialParams.StopBits    = ONESTOPBIT;
+            dcbSerialParams.Parity      = NOPARITY;
+            dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
+            ceu_dbg_assert(SetCommState(hSerial, &dcbSerialParams));
+        
+            PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
+            //Sleep(2000);
+        } 
+
+        // READ
+        loop do
+            loop do
+                {
+                    ClearCommError(hSerial, &errors, &status);
+
+                    if (status.cbInQue == 1) {
+                        printf("break) status.cbInQue: %d\n", status.cbInQue);
+                        break;
+                    }
+                }
+                await 10ms;
+            end
+            
+            {
+                ceu_dbg_assert(ReadFile(hSerial, buffer, 1, &bytesRead, NULL));
+                ceu_dbg_assert(bytesRead == 1);
+        
+                buffer[1] = '\0';
+                printf(">>> %c\n", buffer);
+            }
+
+        end
+        
+        // {
+        //     // CLOSE
+        //     CloseHandle(hSerial);
+        // }
+    with
+        var integer key;
+        every key in KEY_PRESS do
+            if key == KEY_LEFT then
+                if control==1 then
+                    control = 0;
+                else/if control == 0 or control == -1 then
+                    control = -1;
+                end
+            else/if key == KEY_RIGHT then
+                if control==-1 then
+                    control = 0;
+                else/if control==0 or control == 1 then
+                    control = 1;        
+                end         
+            else/if key == KEY_UP then
+                _printf("BANG");
+            end
+        end
+    with
+        every 50ms do
+            //_printf("> %d (control: %d)\n", x, control);
+            if control == -1 then
+                emit WINDOW_CLEAR();
+                emit GRAPHICS_SET_BMP_FRAME(2, 4);
+                emit GRAPHICS_SET_BMP_SIZE(_,10);
+
+                if x > -NAVE_LIMITE then
+                    x = x - 2;
+                end
+                emit GRAPHICS_DRAW_BMP(x, NAVE_Y, "res/ship.bmp");
+            else/if control == 1 then
+                emit WINDOW_CLEAR();
+                emit GRAPHICS_SET_BMP_FRAME(3, 4);
+                emit GRAPHICS_SET_BMP_SIZE(_,10);
+
+                if x < NAVE_LIMITE then
+                    x = x + 2;
+                end
+                emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");               
+            else/if control == 0 then
+                emit WINDOW_CLEAR();
+                emit GRAPHICS_SET_BMP_FRAME(1, 4);
+                emit GRAPHICS_SET_BMP_SIZE(_,10);
+                emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");
+            end
+        end
+
+    end
+
+
+    
+    
+    
+#endif
