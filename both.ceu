@@ -14,13 +14,11 @@
     input  bool PIN_04; //right button
 
     event  void shoot;
-    event  void left;
-    event  void right;
+    event  void move;
 
     native _shootSound;
     native _moveSound;
-
-    native/pre do
+    native/pre do //SOUNDS DEFINITIONS
         #define buzzerPort 11 
         
         void shootSound(){
@@ -36,62 +34,59 @@
             delay(40);
             noTone(buzzerPort);
         }
-    end    
-
-    //_Serial.write(a);
-    //a = await SERIAL;
+    end
     
-    par/and do
-        //blink on-board led
+    par/and do //READ SERIAL TO EMIT EVENTS
         loop do
-            emit PIN_13(HIGH);
-            await 1s;
-            emit PIN_13(LOW);
-            await 1s;
+            var byte a = _;
+            var bool bifMove = _;
+            var bool bifShoot = _;
+
+            a = await SERIAL;
+
+            { @bifMove  = ( (char) @a) == '1';};
+            { @bifShoot = ( (char) @a) == '3';};
+
+            if (bifMove) then
+                emit move;
+            else/if (bifShoot) then
+                emit shoot;
+            end
         end
-    with
-        //play buzzer
-        loop do
-            await shoot;
-            _shootSound();
-            await 100ms;
-        end
-    with
-        //play buzzer left
-        loop do
-            await left;
-            _moveSound();
-            await 100ms;
-        end
-    with
-        //play buzzer right
-        loop do
-            await right;
-            _moveSound();
-            await 100ms;
-        end     
-    with
-        //shoot button
+
+    with //CHECK SHOOT BUTTON TO EMIT EVENT AND WIRTE ON SERIAL
         loop do
             var bool v = await PIN_02 until v==HIGH;
             emit shoot;
             _Serial.write(1);
         end
-    with
-        //left button
+    with //CHECK LEFT BUTTON TO EMIT EVENT AND WIRTE ON SERIAL
         loop do
             var bool v = await PIN_12 until v==HIGH;
-            emit left;
+            emit move;
             _Serial.write(2);
         end
-    with
-        //right button
+    with //CHECK RIGHT BUTTON TO EMIT EVENT AND WIRTE ON SERIAL
         loop do
             var bool v = await PIN_04 until v==HIGH;
-            emit right;
+            emit move;
             _Serial.write(3);
         end
+
+    with //CALLBACK OF "SHOOT" EVENT
+        loop do
+            await shoot;
+            _shootSound();
+            await 100ms;
+        end
+    with //CALLBACK OF "MOVE" EVENT
+        loop do
+            await move;
+            _moveSound();
+            await 100ms;
+        end           
     end
+
 #elif defined CEUMAKER_PICO
     
     native/pre do
@@ -125,43 +120,66 @@
         HANDLE hSerial;
     end
 
-    par/and do //CHECK KEYBOARD KEYS TO EMIT EVENTS 
+    { //INITIATE SERIAL
+        hSerial = CreateFile("COM3",
+                GENERIC_READ | GENERIC_WRITE,
+                0,
+                NULL,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                NULL);
+        ceu_dbg_assert(hSerial != INVALID_HANDLE_VALUE);
+
+        DCB dcbSerialParams = {0};
+        ceu_dbg_assert(GetCommState(hSerial,&dcbSerialParams));
+    
+        dcbSerialParams.BaudRate    = CBR_9600;
+        dcbSerialParams.ByteSize    = 8;
+        dcbSerialParams.StopBits    = ONESTOPBIT;
+        dcbSerialParams.Parity      = NOPARITY;
+        dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
+        ceu_dbg_assert(SetCommState(hSerial, &dcbSerialParams));
+    
+        PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
+    }
+
+    par/and do //CHECK KEYBOARD KEYS TO EMIT EVENTS AND WRITE ON SERIAL
         var integer key;
         every key in KEY_PRESS do
             if key == KEY_LEFT then
                 emit left;
+                { // WRITE
+                    const char* buffer = "1";
+                    int nbChar = 1;
+                    DWORD bytesSend;
+            
+                    ceu_dbg_assert(WriteFile(hSerial, (void*)buffer, nbChar, &bytesSend, 0));
+                    ceu_dbg_assert(bytesSend == nbChar);
+                }
             else/if key == KEY_RIGHT then
+                { // WRITE
+                    const char* buffer = "1";
+                    int nbChar = 1;
+                    DWORD bytesSend;
+            
+                    ceu_dbg_assert(WriteFile(hSerial, (void*)buffer, nbChar, &bytesSend, 0));
+                    ceu_dbg_assert(bytesSend == nbChar);
+                }
                 emit right;      
             else/if key == KEY_SPACE then
+                { // WRITE
+                    const char* buffer = "3";
+                    int nbChar = 1;
+                    DWORD bytesSend;
+            
+                    ceu_dbg_assert(WriteFile(hSerial, (void*)buffer, nbChar, &bytesSend, 0));
+                    ceu_dbg_assert(bytesSend == nbChar);
+                }
                 emit shoot;
             end
         end
     with //READ SERIAL TO EMIT EVENTS
-        {
-            hSerial = CreateFile("COM3",
-                    GENERIC_READ | GENERIC_WRITE,
-                    0,
-                    NULL,
-                    OPEN_EXISTING,
-                    FILE_ATTRIBUTE_NORMAL,
-                    NULL);
-            ceu_dbg_assert(hSerial != INVALID_HANDLE_VALUE);
-
-            DCB dcbSerialParams = {0};
-            ceu_dbg_assert(GetCommState(hSerial,&dcbSerialParams));
-        
-            dcbSerialParams.BaudRate    = CBR_9600;
-            dcbSerialParams.ByteSize    = 8;
-            dcbSerialParams.StopBits    = ONESTOPBIT;
-            dcbSerialParams.Parity      = NOPARITY;
-            dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
-            ceu_dbg_assert(SetCommState(hSerial, &dcbSerialParams));
-        
-            PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
-            //Sleep(2000);
-        } 
-
-        loop do //READ SERIAL TO EMIT EVENTS
+        loop do
             loop do
                 {
                     DWORD errors;
@@ -196,6 +214,7 @@
         //     // CLOSE
         //     CloseHandle(hSerial);
         // }
+
     with //CALLBACK OF "SHOOT" EVENT
         loop do
             await shoot;
@@ -219,6 +238,7 @@
                 control = -1;
             end
         end
+
     with //DRAW SHIP
         every 50ms do
             if control == -1 then
