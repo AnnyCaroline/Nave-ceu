@@ -114,6 +114,27 @@
     var int y = 0;
     var int control = 0;
 
+    //SHOT CODE/AWAIT
+    code/await Shot (var int x) -> void do
+        var int shotY = NAVE_Y;
+        event void ended;
+
+        par/or do
+            loop do 
+                _printf("shoot - shotY: %d\n", shotY);
+                shotY = shotY + 10;
+                if (shotY ==  30) then
+                    emit ended;
+                end
+                await 1s;
+            end
+        with
+            await ended;
+        end
+    end
+
+    pool[10] Shot shotPool;
+
     native/plain _hSerial;
     native/pre do
         HANDLE hSerial;
@@ -154,18 +175,15 @@
         PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
     }
 
-    par/and do //CHECK KEYBOARD KEYS TO EMIT EVENTS AND WRITE ON SERIAL
+    par/and do //CHECK KEYBOARD KEYS TO EMIT EVENTS
         var integer key;
         every key in KEY_PRESS do
             if key == KEY_LEFT then
                 emit left;
-                _writeByte("1");
             else/if key == KEY_RIGHT then
                 emit right;
-                _writeByte("2");
             else/if key == KEY_SPACE then
                 emit shoot;
-                _writeByte("3");
             end
         end
     with //READ SERIAL TO EMIT EVENTS
@@ -207,11 +225,17 @@
     with //CALLBACK OF "SHOOT" EVENT
         loop do
             await shoot;
-            _printf("shoot\n");
+
+            _writeByte("3");
+
+            spawn Shot(x) in shotPool;
         end
     with //CALLBACK OF "RIGHT" EVENT
         loop do
             await right;
+
+            _writeByte("2");
+
             if control==-1 then
                 control = 0;
             else/if control==0 or control == 1 then
@@ -221,6 +245,9 @@
     with //CALLBACK OF "LEFT" EVENT
         loop do
             await left;
+            
+            _writeByte("1");
+
             if control==1 then
                 control = 0;
             else/if control == 0 or control == -1 then
