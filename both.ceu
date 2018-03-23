@@ -115,18 +115,18 @@
     var int control = 0;
 
     //SHOT CODE/AWAIT
-    code/await Shot (var int x) -> void do
-        var int shotY = NAVE_Y;
+    code/await Shot (var int x) -> (var int shotX, var int shotY) -> void do
+        shotX = x;
+        shotY = NAVE_Y + 4;
         event void ended;
 
         par/or do
             loop do 
-                _printf("shoot - shotY: %d\n", shotY);
-                shotY = shotY + 10;
+                shotY = shotY + 1;
                 if (shotY ==  30) then
-                    emit ended;
+                    emit ended;                
                 end
-                await 1s;
+                await 50ms;
             end
         with
             await ended;
@@ -255,10 +255,11 @@
             end
         end
 
-    with //DRAW SHIP
+    with //DRAW SHIP AND SHOTS
         every 50ms do
+            emit WINDOW_CLEAR();
+            
             if control == -1 then
-                emit WINDOW_CLEAR();
                 emit GRAPHICS_SET_BMP_FRAME(2, 4);
                 emit GRAPHICS_SET_BMP_SIZE(_,10);
 
@@ -268,7 +269,6 @@
                 emit GRAPHICS_DRAW_BMP(x, NAVE_Y, "res/ship.bmp");
 
             else/if control == 1 then
-                emit WINDOW_CLEAR();
                 emit GRAPHICS_SET_BMP_FRAME(3, 4);
                 emit GRAPHICS_SET_BMP_SIZE(_,10);
 
@@ -278,11 +278,19 @@
 
                 emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");               
             else/if control == 0 then
-                emit WINDOW_CLEAR();
                 emit GRAPHICS_SET_BMP_FRAME(1, 4);
                 emit GRAPHICS_SET_BMP_SIZE(_,10);
                 emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");
             end
+
+            var&? Shot s;             
+            loop s in shotPool do
+                emit GRAPHICS_SET_BMP_FRAME(_,_);
+                emit GRAPHICS_SET_BMP_SIZE(3,_);
+                emit GRAPHICS_DRAW_BMP(s!.shotX, s!.shotY, "res/shot.bmp");
+            end
+
+
         end
     end
 
