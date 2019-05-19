@@ -1,298 +1,169 @@
+//Vou o USART para linux
+
 #ifdef CEUMAKER_ARDUINO
+    #include "int0.ceu"
+    #include "pcint0.ceu"
+    #include "wclock.ceu"
+    #include "usart.ceu"
+    //#include "pwm.ceu"
+    #include "out.ceu"
 
-    #include "arduino/arduino.ceu"
-    
-    native/pre do
-        //##define CEU_ARDUINO_SERIAL_SPEED 9600
-    end
-    
-    input byte SERIAL;
+    output high/low OUT_11;
 
-    output bool PIN_13; //led
-    input  bool PIN_02; //shoot button
-    input  bool PIN_12; //left button
-    input  bool PIN_04; //right button
+    var int debounceTime = 50+100; //examples/gpio-01.ceu. Como posso calcular isso?
 
-    event  void shoot;
-    event  void move;
+    //Sem essa linha, o sound!.shoot (com pwm) não funciona
+    //spawn Pwm(11,0);
 
-    native _shootSound;
-    native _moveSound;
-    native/pre do //SOUNDS DEFINITIONS
-        #define buzzerPort 11 
-        
-        void shootSound(){
-            tone(buzzerPort, 2093);
-            delay(40);
-            tone(buzzerPort, 1865);
-            delay(83);
-            noTone(buzzerPort);
-        }
+    emit OUT(13, low);
 
-        void moveSound(){
-            tone(buzzerPort, 880);
-            delay(40);
-            noTone(buzzerPort);
-        }
-    end
-    
-    par/and do //READ SERIAL TO EMIT EVENTS
-        loop do
-            var byte a = _;
-            var bool bifMove = _;
-            var bool bifShoot = _;
+    code/await Sound(none) -> (event none shoot, event none move) -> NEVER do
+        var int buzzerPort = 11;
 
-            a = await SERIAL;
-
-            { @bifMove  = (( (char) @a) == '1') || (( (char) @a) == '2');};
-            { @bifShoot = ( (char) @a) == '3';};
-
-            if (bifMove) then
-                emit move;
-            else/if (bifShoot) then
-                emit shoot;
-            end
-        end
-
-    with //CHECK SHOOT BUTTON TO EMIT EVENT AND WIRTE ON SERIAL
-        loop do
-            var bool v = await PIN_02 until v==HIGH;
-            emit shoot;
-            _Serial.write(1);
-        end
-    with //CHECK LEFT BUTTON TO EMIT EVENT AND WIRTE ON SERIAL
-        loop do
-            var bool v = await PIN_12 until v==HIGH;
-            emit move;
-            _Serial.write(2);
-        end
-    with //CHECK RIGHT BUTTON TO EMIT EVENT AND WIRTE ON SERIAL
-        loop do
-            var bool v = await PIN_04 until v==HIGH;
-            emit move;
-            _Serial.write(3);
-        end
-
-    with //CALLBACK OF "SHOOT" EVENT
-        loop do
-            await shoot;
-            _shootSound();
-            await 100ms;
-        end
-    with //CALLBACK OF "MOVE" EVENT
-        loop do
-            await move;
-            _moveSound();
-            await 100ms;
-        end           
-    end
-
-#elif defined CEUMAKER_PICO
-    
-    native/pre do
-        ##include <windows.h>
-    end
-
-    event void shoot;
-    event void left;
-    event void right;    
-
-    emit WINDOW_SET_TITLE("Game");
-    emit WINDOW_SET_SIZE(100*10, 100*10, 100, 100);
-
-    #define NAVE_Y -10
-    #define NAVE_LIMITE 42
-
-    emit WINDOW_CLEAR();
-    emit WINDOW_SET_GRID(no);
-    emit GRAPHICS_SET_BMP_FRAME(1, 4);
-    emit GRAPHICS_SET_BMP_SIZE(_,10);
-    emit GRAPHICS_DRAW_BMP(0,NAVE_Y, "res/ship.bmp");
-
-    //SHIP CONTROL VARIABLES
-    var int x = 0;
-    var int y = 0;
-    var int control = 0;
-
-    //SHOT CODE/AWAIT
-    code/await Shot (var int x) -> (var int shotX, var int shotY) -> void do
-        shotX = x;
-        shotY = NAVE_Y + 4;
-        event void ended;
-
-        par/or do
-            loop do 
-                shotY = shotY + 1;
-                if (shotY ==  30) then
-                    emit ended;                
-                end
-                await 50ms;
+        par do
+            loop do
+                await shoot;
+                // spawn Pwm(11,10);
+                emit OUT(11, high);
+                await 40ms;
+                emit OUT(11, low);
             end
         with
-            await ended;
-        end
-    end
-
-    pool[10] Shot shotPool;
-
-    native/plain _hSerial;
-    native/pre do
-        HANDLE hSerial;
-    end
-
-    native _writeByte;
-    native/pre do //WRITE A BYTE ON SERIAL
-        void writeByte(char* b){
-            const char* buffer = b;
-            int nbChar = 1;
-            DWORD bytesSend;
-    
-            ceu_dbg_assert(WriteFile(hSerial, (void*)buffer, nbChar, &bytesSend, 0));
-            ceu_dbg_assert(bytesSend == nbChar);
-        }
-    end    
-
-    { //INITIATE SERIAL
-        hSerial = CreateFile("COM3",
-                GENERIC_READ | GENERIC_WRITE,
-                0,
-                NULL,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                NULL);
-        ceu_dbg_assert(hSerial != INVALID_HANDLE_VALUE);
-
-        DCB dcbSerialParams = {0};
-        ceu_dbg_assert(GetCommState(hSerial,&dcbSerialParams));
-    
-        dcbSerialParams.BaudRate    = CBR_9600;
-        dcbSerialParams.ByteSize    = 8;
-        dcbSerialParams.StopBits    = ONESTOPBIT;
-        dcbSerialParams.Parity      = NOPARITY;
-        dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
-        ceu_dbg_assert(SetCommState(hSerial, &dcbSerialParams));
-    
-        PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
-    }
-
-    par/and do //CHECK KEYBOARD KEYS TO EMIT EVENTS
-        var integer key;
-        every key in KEY_PRESS do
-            if key == KEY_LEFT then
-                emit left;
-            else/if key == KEY_RIGHT then
-                emit right;
-            else/if key == KEY_SPACE then
-                emit shoot;
-            end
-        end
-    with //READ SERIAL TO EMIT EVENTS
-        loop do
             loop do
-                {
-                    DWORD errors;
-                    COMSTAT status;
-
-                    ClearCommError(hSerial, &errors, &status);
-                    if (status.cbInQue == 1)
-                        break;
-                }
-                await 10ms;
+                await move;
+                emit OUT(11, high);
+                await 40ms;
+                emit OUT(11, low);
             end
-            
-            {
-                DWORD bytesRead;
-                char buffer[1];
-
-                ceu_dbg_assert(ReadFile(hSerial, buffer, 1, &bytesRead, NULL));
-                ceu_dbg_assert(bytesRead == 1);
-            }
-
-            if ({buffer[0]} == 1) then
-                emit shoot;
-            else/if ({buffer[0]} == 2) then
-                emit left;
-            else/if ({buffer[0]} == 3) then
-                emit right;
-            end
-        end
-        
-        // {
-        //     // CLOSE
-        //     CloseHandle(hSerial);
-        // }
-
-    with //CALLBACK OF "SHOOT" EVENT
-        loop do
-            await shoot;
-
-            _writeByte("3");
-
-            spawn Shot(x) in shotPool;
-        end
-    with //CALLBACK OF "RIGHT" EVENT
-        loop do
-            await right;
-
-            _writeByte("2");
-
-            if control==-1 then
-                control = 0;
-            else/if control==0 or control == 1 then
-                control = 1;        
-            end
-        end
-    with //CALLBACK OF "LEFT" EVENT
-        loop do
-            await left;
-            
-            _writeByte("1");
-
-            if control==1 then
-                control = 0;
-            else/if control == 0 or control == -1 then
-                control = -1;
-            end
-        end
-
-    with //DRAW SHIP AND SHOTS
-        every 50ms do
-            emit WINDOW_CLEAR();
-            
-            if control == -1 then
-                emit GRAPHICS_SET_BMP_FRAME(2, 4);
-                emit GRAPHICS_SET_BMP_SIZE(_,10);
-
-                if x > -NAVE_LIMITE then
-                    x = x - 2;
-                end
-                emit GRAPHICS_DRAW_BMP(x, NAVE_Y, "res/ship.bmp");
-
-            else/if control == 1 then
-                emit GRAPHICS_SET_BMP_FRAME(3, 4);
-                emit GRAPHICS_SET_BMP_SIZE(_,10);
-
-                if x < NAVE_LIMITE then
-                    x = x + 2;
-                end
-
-                emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");               
-            else/if control == 0 then
-                emit GRAPHICS_SET_BMP_FRAME(1, 4);
-                emit GRAPHICS_SET_BMP_SIZE(_,10);
-                emit GRAPHICS_DRAW_BMP(x,NAVE_Y, "res/ship.bmp");
-            end
-
-            var&? Shot s;             
-            loop s in shotPool do
-                emit GRAPHICS_SET_BMP_FRAME(_,_);
-                emit GRAPHICS_SET_BMP_SIZE(3,_);
-                emit GRAPHICS_DRAW_BMP(s!.shotX, s!.shotY, "res/shot.bmp");
-            end
-
-
         end
     end
 
-    
+    spawn USART_Init(9600);
+    var& Sound sound = spawn Sound();
+
+    call PCINT0_Enable(_PCINT0, on); //D8 -> right btn
+    call PCINT0_Enable(_PCINT4, on); //D12 -> left btn
+
+    par do
+        loop do
+            var[20] byte str = [];
+            await USART_Rx(&str, _);
+
+            emit sound.shoot;
+        end
+    with
+        loop do
+            await PCINT0;
+            var high/low vBtnRight = call PCINT0_Get(_PCINT0);
+            var high/low vBtnLeft  = call PCINT0_Get(_PCINT4);
+            if vBtnRight or vBtnLeft then
+                emit sound.move;
+                var[2] byte str = [].."S";
+                await USART_Tx(&str);
+            end
+            await (debounceTime)ms;
+        end
+    with
+        loop do
+            await INT0; //D2
+            var high/low v = call INT0_Get();
+            if (v == high) then
+                emit sound.shoot;
+                var[2] byte str = [].."S";
+                await USART_Tx(&str);
+            end
+            await (debounceTime)ms;
+        end
+    end
+#elif defined CEUMAKER_PICO
+    #include "usart.ceu"
+
+    spawn Usart(0); //passar uma string
+
+    emit FRAMES_SET(yes);
+    emit WINDOW_SET_GRID(no);
+    emit GRAPHICS_SET_SCALE(0.3, 0.3);
+
+    code/await Ship(none) -> (event none left, event none right, event none shoot) -> NEVER do
+        var int frame = 1;
+        var int x_axis = 0;
+        var int x = 0;
+
+        par do
+            every FRAMES_REDRAW do
+                emit GRAPHICS_SET_BMP_FRAME(frame,4);
+                emit GRAPHICS_DRAW_BMP(x,-20, "res/ship.bmp");
+            end
+        with
+            every FRAMES_UPDATE do
+                if (x_axis == 1) and (x<21) then
+                    x = x + 1;
+                else/if (x_axis == -1) and (x>-21) then
+                    x = x - 1;
+                end
+            end
+        with
+            every left do
+                if (x_axis == 1) then
+                    x_axis = 0;
+                    frame = 1;
+                else/if (x_axis == 0) then
+                    x_axis = -1;
+                    frame = 2;                    
+                end
+            end
+        with
+            every right do
+                if (x_axis == -1) then
+                    x_axis = 0;
+                    frame = 1;
+                else/if (x_axis == 0) then
+                    x_axis = 1;
+                    frame = 3;                    
+                end
+            end
+        with
+            code/await Shoot(var int x) -> none do
+                var int y = -15;
+                var int v = 40; //ms
+                par/or do
+                    every FRAMES_REDRAW do
+                        emit GRAPHICS_SET_BMP_FRAME(0,1);
+                        emit GRAPHICS_DRAW_BMP(x,y, "res/star.bmp");
+                    end
+                with
+                    every (40)ms do
+                        y = y+1;
+                    end
+                end
+            end
+
+            pool[] Shoot shoots;
+            every shoot do
+                spawn Shoot(x) in shoots;
+            end
+        end
+    end
+
+    var&? Ship ship = spawn Ship();
+
+    var int key;
+    every key in KEY_PRESS do
+        if key == KEY_LEFT then
+            emit ship!.left;
+            var[2] byte str = [].."L";
+            await Usart_TX(&str);
+        else/if key == KEY_RIGHT then
+            emit ship!.right;
+            var[2] byte str = [].."R";
+            await Usart_TX(&str);
+        else/if key == KEY_SPACE then
+            emit ship!.shoot;
+            var[2] byte str = [].."S";
+            await Usart_TX(&str);
+        end
+    end
+
+    await FOREVER;
+
 #endif
