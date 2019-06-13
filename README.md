@@ -1,14 +1,15 @@
 # Nave-ceu
-Jogo utilizando pico-Céu e Céu-Arduino  
-[Vídeo do jogo em funcionamento](https://youtu.be/W1SWoqYCfWs)
+Example using pico-Céu and Céu-Arduino
 
-## Circuito
-![circuito](https://uploaddeimagens.com.br/images/001/340/821/full/Nave-ceu.jpg?1521728030)
+[Video](https://youtu.be/W1SWoqYCfWs)
 
-### Portas
-| Port  | In/Out |                 | Correspondent on the PC keyboard |
-|-------|--------|-----------------|----------------------------------|
-| *2*   | In     | Shoot Button    | SPACE                            |
-| *4*   | In     | Right Button    | Right arrow                      |
-| *~11* | Out    | Buzzer          | -                                |
-| *12*  | In     | Left Button     | Left arrow                       |
+## Circuit
+![circuit](circuit.jpg)
+
+### Ports
+| Port    | Uno | In/Out | Description     | Correspondent on the PC keyboard |
+|---------|-----|--------|-----------------|----------------------------------|
+| PCINT8  | A0  | In     | Shoot Button    | SPACE                            |
+| PCINT9  | A1  | In     | Right Button    | Right arrow                      |
+| PCINT10 | A2  | In     | Left Button     | Left arrow                       |
+| -       | ~5  | Out    | Buzzer          | -                                |

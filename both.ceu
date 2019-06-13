@@ -1,84 +1,80 @@
-//Vou o USART para linux
-
 #ifdef CEUMAKER_ARDUINO
-    #include "int0.ceu"
-    #include "pcint0.ceu"
+    #include "pcint1.ceu"
     #include "wclock.ceu"
     #include "usart.ceu"
-    //#include "pwm.ceu"
-    #include "out.ceu"
+    #include "pwm.ceu"
+    #include "string.ceu"
 
-    output high/low OUT_11;
-
-    var int debounceTime = 50+100; //examples/gpio-01.ceu. Como posso calcular isso?
-
-    //Sem essa linha, o sound!.shoot (com pwm) não funciona
-    //spawn Pwm(11,0);
-
-    emit OUT(13, low);
+    var int debounceTime = 150; //ms
 
     code/await Sound(none) -> (event none shoot, event none move) -> NEVER do
-        var int buzzerPort = 11;
+        var int buzzerPort = 5;
 
         par do
             loop do
                 await shoot;
-                // spawn Pwm(11,10);
-                emit OUT(11, high);
-                await 40ms;
-                emit OUT(11, low);
+                spawn Pwm(buzzerPort, 100);
+                await 80ms;
+                spawn Pwm(buzzerPort, 0);
             end
         with
             loop do
                 await move;
-                emit OUT(11, high);
+                spawn Pwm(buzzerPort, 255);
                 await 40ms;
-                emit OUT(11, low);
+                spawn Pwm(buzzerPort, 0);
             end
         end
     end
 
-    spawn USART_Init(9600);
+    spawn USART_Init(19200);
     var& Sound sound = spawn Sound();
 
-    call PCINT0_Enable(_PCINT0, on); //D8 -> right btn
-    call PCINT0_Enable(_PCINT4, on); //D12 -> left btn
+    call PCINT1_Enable(_PCINT8,  on); //A0 -> shoot btn
+    call PCINT1_Enable(_PCINT9,  on); //A1 -> right btn
+    call PCINT1_Enable(_PCINT10, on); //A2 -> left btn
 
     par do
         loop do
-            var[20] byte str = [];
+            var[2] byte str = [];
             await USART_Rx(&str, _);
-
-            emit sound.shoot;
-        end
-    with
-        loop do
-            await PCINT0;
-            var high/low vBtnRight = call PCINT0_Get(_PCINT0);
-            var high/low vBtnLeft  = call PCINT0_Get(_PCINT4);
-            if vBtnRight or vBtnLeft then
+            
+            if call String_Equal_STR(&str, "S") then
+                emit sound.shoot;
+            else/if (call String_Equal_STR(&str, "R") or call String_Equal_STR(&str, "L")) then
                 emit sound.move;
-                var[2] byte str = [].."S";
-                await USART_Tx(&str);
             end
-            await (debounceTime)ms;
         end
     with
         loop do
-            await INT0; //D2
-            var high/low v = call INT0_Get();
-            if (v == high) then
+            await PCINT1;
+            var high/low vBtnShoot = call PCINT1_Get(_PCINT8);  //A0 - shoot
+            var high/low vBtnRight = call PCINT1_Get(_PCINT9);  //A1 - right
+            var high/low vBtnLeft  = call PCINT1_Get(_PCINT10); //A2 - left
+
+            // FUNCIONA
+            if vBtnShoot then
                 emit sound.shoot;
                 var[2] byte str = [].."S";
                 await USART_Tx(&str);
-            end
+            else/if vBtnRight then
+                emit sound.move;
+                var[2] byte str = [].."R";
+                await USART_Tx(&str);
+            else/if vBtnLeft then
+                emit sound.move;
+                var[2] byte str = [].."L";
+                await USART_Tx(&str);
+            end    
+
             await (debounceTime)ms;
         end
     end
 #elif defined CEUMAKER_PICO
     #include "usart.ceu"
+    #include "string.ceu"
 
-    spawn Usart(0); //passar uma string
+    spawn USART_Init("6", 19200);
 
     emit FRAMES_SET(yes);
     emit WINDOW_SET_GRID(no);
@@ -134,6 +130,9 @@
                 with
                     every (40)ms do
                         y = y+1;
+                        if (y > 25) then
+                            break;
+                        end
                     end
                 end
             end
@@ -147,23 +146,35 @@
 
     var&? Ship ship = spawn Ship();
 
-    var int key;
-    every key in KEY_PRESS do
-        if key == KEY_LEFT then
-            emit ship!.left;
-            var[2] byte str = [].."L";
-            await Usart_TX(&str);
-        else/if key == KEY_RIGHT then
-            emit ship!.right;
-            var[2] byte str = [].."R";
-            await Usart_TX(&str);
-        else/if key == KEY_SPACE then
-            emit ship!.shoot;
-            var[2] byte str = [].."S";
-            await Usart_TX(&str);
+    par do
+        every 10ms do
+            var[2] byte str = [];
+            await USART_Rx(&str, 2);
+
+            if call String_Equal_STR(&str, "L") then
+                emit ship!.left;
+            else/if call String_Equal_STR(&str, "R") then
+                emit ship!.right;
+            else/if call String_Equal_STR(&str, "S") then
+                emit ship!.shoot;
+            end
+        end
+    with
+        var int key;
+        every key in KEY_PRESS do
+            if key == KEY_LEFT then
+                emit ship!.left;
+                var[2] byte str = [].."L";
+                await USART_Tx(&str);
+            else/if key == KEY_RIGHT then
+                emit ship!.right;
+                var[2] byte str = [].."R";
+                await USART_Tx(&str);
+            else/if key == KEY_SPACE then
+                emit ship!.shoot;
+                var[2] byte str = [].."S";
+                await USART_Tx(&str);
+            end
         end
     end
-
-    await FOREVER;
-
 #endif
